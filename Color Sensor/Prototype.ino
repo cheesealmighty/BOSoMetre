@@ -55,7 +55,10 @@ void setup() {
   sensorDataFile = SD.open("sensordata.txt", FILE_WRITE);
   if (!sensorDataFile) {
     Serial.println("Error opening file!");
-    // Add error handling here
+   // Add your actual handling here:
+    // - Perhaps light up an error LED
+    // - Try to reinitialize the SD card
+    // - Optionally, store data temporarily and attempt to write later
   }
 }
 
