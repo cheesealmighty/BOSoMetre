@@ -8,8 +8,11 @@
 #define S3 11
 #define sensorOut 12
 
-// Store the calibration value for clear CSF readings
-int baselineClearPeriodCount = 0; // Establish this value during calibration
+// Store the calibration value for clear CSF readings (TO-DO CALIBRATION!!!)
+int baselineClearPeriodCount = 0; 
+int baselineRedPeriodCount = 0; 
+int baselineGreenPeriodCount = 0; 
+int baselineBluePeriodCount = 0; 
 
 // Specifies the target count to be achieved within the dynamic time adjustment
 const int targetCount = 360; 
@@ -23,7 +26,7 @@ int clearPeriodCount = 0;
 // Timeout setting for the pulseIn() function
 const int pulseTimeout = 2000; // Timeout in microseconds
 
-// Specifies the chip select pin for the SD card module (Arduino Micro) 
+// Specifies the chip select pin for the SD card module
 const int chipSelect = 4;  
 
 // Variables for interacting with the SD card
@@ -55,10 +58,8 @@ void setup() {
   sensorDataFile = SD.open("sensordata.txt", FILE_WRITE);
   if (!sensorDataFile) {
     Serial.println("Error opening file!");
-   // Add your actual handling here:
-    // - Perhaps light up an error LED
-    // - Try to reinitialize the SD card
-    // - Optionally, store data temporarily and attempt to write later
+   // Add handling here:
+    // light up an error LED?
   }
 }
 
@@ -144,13 +145,21 @@ void loop() {
       currentTime = millis();
   }
 
-  // --- Calculate Turbidity (Reduction in Clear Reading) ---
-  int turbidityReductionPercent = (baselineClearPeriodCount - clearPeriodCount) * 100 / baselineClearPeriodCount;  
+	// --- Calculate Turbidity (Reduction in Clear Reading) ---
+	int turbidityReductionPercent = (baselineClearPeriodCount - clearPeriodCount) * 100 / baselineClearPeriodCount;  
+	
+	// Color Changes (compared to baselines)	
+	int redChangePercent = (redPeriodCount - baselineRedPeriodCount) * 100 / baselineRedPeriodCount;
+	int greenChangePercent = (greenPeriodCount - baselineGreenPeriodCount) * 100 / baselineGreenPeriodCount; 
+	int blueChangePercent = (bluePeriodCount - baselineBluePeriodCount) * 100 / baselineBluePeriodCount;
+
 
   // --- Build the CSV data string for SD card logging ---
   dataString  = String(redPeriodCount) + "," + String(greenPeriodCount) + "," + 
                 String(bluePeriodCount) + "," + String(clearPeriodCount) + "," + 
-                String(turbidityReductionPercent) + "%\n";
+                String(turbidityReductionPercent) + "," + 
+                String(redChangePercent) + "," + String(greenChangePercent) + "," +
+                String(blueChangePercent) + "%\n"; 
 
   // --- Write the data to the SD card ---
   if (sensorDataFile) {
@@ -158,7 +167,7 @@ void loop() {
   }
 }
 
-// (Important!) Close the file in some appropriate way
+//  Close the file 
 void closeDataFile() {
   if (sensorDataFile) {
     sensorDataFile.close();
