@@ -1,4 +1,5 @@
-
+#include <SPI.h> 
+#include <SD.h>
 
 // TCS230 or TCS3200 pins wiring to Arduino
 #define S0 8
@@ -7,75 +8,118 @@
 #define S3 11
 #define sensorOut 12
 
-// Stores frequency read by the photodiodes
-int redFrequency = 0;
-int greenFrequency = 0;
-int blueFrequency = 0;
-int cLearFrequency =0;
+// Calibration baseline 
+int baselineClearPeriodCount = 0; // Establish this value during calibration
+
+// Target count for 50ms
+const int targetCount = 360; 
+
+// Variables for counting periods within measurementTime
+int redPeriodCount = 0;
+int greenPeriodCount = 0;
+int bluePeriodCount = 0;
+int clearPeriodCount = 0;
+
+// Timeout for pulseIn()
+const int pulseTimeout = 2000; 
+
+// Pin for SD card chip select - Built-in for Arduino Micro
+const int chipSelect = 4;  
+
+// Variables for SD card writing
+File sensorDataFile;
+String dataString = ""; 
 
 void setup() {
-  // Setting the outputs
+  // Setting outputs for sensor control
   pinMode(S0, OUTPUT);
   pinMode(S1, OUTPUT);
   pinMode(S2, OUTPUT);
   pinMode(S3, OUTPUT);
-  
-  // Setting the sensorOut as an input
+
+  // Setting sensorOut as input for receiving frequency data
   pinMode(sensorOut, INPUT);
-  
-  // Setting frequency scaling to 20%
-  digitalWrite(S0,HIGH);
-  digitalWrite(S1,LOW);
-  
-   // Begins serial communication 
+
+  // Start serial communication for debugging output
   Serial.begin(9600);
+
+  // Initialize SD card
+  Serial.print("Initializing SD card...");
+  if (!SD.begin(chipSelect)) {
+    Serial.println("initialization failed!");
+    while(1); // Potential error handling loop
+  }
+  Serial.println("initialization done.");
+
+  // Open file for writing
+  sensorDataFile = SD.open("sensordata.txt", FILE_WRITE);
+  if (!sensorDataFile) {
+    Serial.println("Error opening file!");
+    // Add error handling here
+  }
 }
+
 void loop() {
-  // Setting RED (R) filtered photodiodes to be read
-  digitalWrite(S2,LOW);
-  digitalWrite(S3,LOW);
-  
-  // Reading the output frequency
-  redFrequency = pulseIn(sensorOut, LOW);
-  
-   // Printing the RED (R) value
-  Serial.print("R = ");
-  Serial.print(redFrequency);
-  delay(100);
-  
-  // Setting GREEN (G) filtered photodiodes to be read
-  digitalWrite(S2,HIGH);
-  digitalWrite(S3,HIGH);
-  
-  // Reading the output frequency
-  greenFrequency = pulseIn(sensorOut, LOW);
-  
-  // Printing the GREEN (G) value  
-  Serial.print(" G = ");
-  Serial.print(greenFrequency);
-  delay(100);
- 
-  // Setting BLUE (B) filtered photodiodes to be read
-  digitalWrite(S2,LOW);
-  digitalWrite(S3,HIGH);
-  
-  // Reading the output frequency
-  blueFrequency = pulseIn(sensorOut, LOW);
-  
-  // Printing the BLUE (B) value 
-  Serial.print(" B = ");
-  Serial.println(blueFrequency);
-  delay(100);
+  // --- Red Reading ---
+  digitalWrite(S2, LOW);
+  digitalWrite(S3, LOW);
+  startTime = millis();
+  redPeriodCount = 0;
 
-  // Setting cLear (L) filtered photodiodes to be read
-  digitalWrite(S2,HIGH);
-  digitalWrite(S3,LOW);
+  // Dynamically adjust measurementTime
+  unsigned long currentTime = millis(); 
+  int dynamicMeasurementTime = 50; // Initial value
+  while (currentTime - startTime < dynamicMeasurementTime) { 
+      int pulseWidth = pulseIn(sensorOut, LOW, pulseTimeout);
+      if (pulseWidth > 0) {
+          redPeriodCount++; 
+          if (redPeriodCount >= targetCount) {
+              dynamicMeasurementTime = currentTime - startTime; 
+              break; 
+          }
+      } 
+      currentTime = millis();
+  }
 
-  // Reading the output frequency 
-  cLearFrequency = pulseIn(sensorOut, LOW);
+  // --- Green Reading --- (similarly modified)
+  digitalWrite(S2, HIGH);
+  digitalWrite(S3, HIGH);
+  startTime = millis();
+  greenPeriodCount = 0; 
+  // ... (same dynamic adjustment as for red)
 
-  //printing the light intensity
-  Serial.print(" L = ");
-  Serial.println(cLearFrequency);
-  delay(100);
+  // --- Blue Reading --- (similarly modified)
+  digitalWrite(S2, LOW);
+  digitalWrite(S3, HIGH);
+  startTime = millis();
+  bluePeriodCount = 0; 
+  // ... (same dynamic adjustment as for red)
+
+  // --- Clear Reading (for Turbidity) ---
+  digitalWrite(S2, HIGH);
+  digitalWrite(S3, LOW);
+  startTime = millis();
+  clearPeriodCount = 0; 
+  // ... (same dynamic adjustment as for red)
+
+  // --- Turbidity Calculation ---
+  int turbidityReductionPercent = (baselineClearPeriodCount - clearPeriodCount) * 100 / baselineClearPeriodCount;  
+
+  // --- Build CSV data line to store ---
+  dataString  = String(redPeriodCount) + "," + String(greenPeriodCount) + "," + 
+                String(bluePeriodCount) + "," + String(clearPeriodCount) + "," + 
+                String(turbidityReductionPercent) + "%\n";
+
+  // --- Write to SD card ---
+  if (sensorDataFile) {
+    sensorDataFile.print(dataString); 
+  }
+}
+
+// (Important!) Close the file in some appropriate way
+void closeDataFile() {
+  if (sensorDataFile) {
+    sensorDataFile.close();
+    Serial.println("Data file closed.");
+  } 
 }
