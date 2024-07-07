@@ -1,6 +1,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Wire.h>
+#include <RTClib.h>
 #include <LiquidCrystal_I2C.h>
 
 // Define pins connected to the TCS3200 sensor
@@ -32,13 +33,21 @@ File sensorDataFile;
 String dataString = ""; 
 
 // Initialize the LCD
-LiquidCrystal_I2C lcd(0x27, 16, 2);  // Change the address if needed
+LiquidCrystal_I2C lcd(0x27, 20, 4);  // Change the address if needed
+
+// Initialize the RTC
+RTC_DS3231 rtc;
+
+// Variable to track shutdown state
+bool isShutdown = false;
 
 // Function Prototypes
 void setupSensorPins();
 void readColor(int &colorCount, int S2State, int S3State);
 void checkShutdown();
 void blinkLED(int delayTime);
+String getTimestamp();
+void displayDataOnLCD(const String &data);
 
 void setup() {
   // Initialize serial communication
@@ -81,6 +90,21 @@ void setup() {
   lcd.backlight();
   lcd.clear();
   lcd.print("Initializing...");
+
+  // Initialize RTC
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    lcd.clear();
+    lcd.print("RTC failed!");
+    while (1) {
+      blinkLED(200); // Fast blink
+    }
+  }
+
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting the time!");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
 }
 
 void loop() {
@@ -88,7 +112,7 @@ void loop() {
   checkShutdown();
 
   // If the shutdown switch is not pressed, run the main loop
-  if (digitalRead(shutdownPin) == HIGH) {
+  if (!isShutdown) {
     // Indicate normal operation with long blinks
     digitalWrite(greenLEDPin, HIGH);
     delay(1000);
@@ -111,13 +135,16 @@ void loop() {
     readColor(clearPeriodCount, HIGH, LOW);
 
     // Calculate and log data
-    int turbidityPercent = (baselineClearPeriodCount - clearPeriodCount) * 100 / baselineClearPeriodCount;
+    int turbidityPercent = (clearPeriodCount - baselineClearPeriodCount) * 100 / baselineClearPeriodCount;
     int redChangePercent = (redPeriodCount - baselineRedPeriodCount) * 100 / baselineRedPeriodCount;
     int greenChangePercent = (greenPeriodCount - baselineGreenPeriodCount) * 100 / baselineGreenPeriodCount;
     int blueChangePercent = (bluePeriodCount - baselineBluePeriodCount) * 100 / baselineBluePeriodCount;
 
-    // Build the data string
-    dataString  = String(redPeriodCount) + "," + String(greenPeriodCount) + "," + 
+    // Get the current timestamp
+    String timestamp = getTimestamp();
+
+    // Build the data string with timestamp
+    dataString  = timestamp + "," + String(redPeriodCount) + "," + String(greenPeriodCount) + "," + 
                   String(bluePeriodCount) + "," + String(clearPeriodCount) + "," + 
                   String(turbidityPercent) + "," + 
                   String(redChangePercent) + "," + String(greenChangePercent) + "," +
@@ -138,12 +165,7 @@ void loop() {
     }
 
     // Display data on the LCD
-    lcd.clear();
-    for (int i = 0; i < dataString.length(); i += 16) {
-      lcd.clear();
-      lcd.print(dataString.substring(i, i + 16));
-      delay(1000); // Adjust delay as needed
-    }
+    displayDataOnLCD(dataString);
 
     // Short delay before the next loop iteration
     delay(1000);
@@ -197,22 +219,32 @@ void readColor(int &colorCount, int S2State, int S3State) {
 void checkShutdown() {
   if (digitalRead(shutdownPin) == LOW) {
     // Shutdown switch pressed
-    Serial.println("Shutdown switch pressed. Stopping SD card operations.");
-    lcd.clear();
-    lcd.print("Shutting down...");
+    if (!isShutdown) {
+      Serial.println("Shutdown switch pressed. Stopping SD card operations.");
+      lcd.clear();
+      lcd.print("Shutting down...");
 
-    // Close the file if it's open
-    if (sensorDataFile) {
-      sensorDataFile.close();
+      // Close the file if it's open
+      if (sensorDataFile) {
+        sensorDataFile.close();
+      }
+
+      // Turn off the green LED to indicate shutdown
+      digitalWrite(greenLEDPin, LOW);
+
+      isShutdown = true;
     }
+  } else {
+    // Shutdown switch released
+    if (isShutdown) {
+      Serial.println("Shutdown switch released. Restarting operations.");
+      lcd.clear();
+      lcd.print("Restarting...");
 
-    // Turn off the green LED to indicate shutdown
-    digitalWrite(greenLEDPin, LOW);
+      // Turn on the green LED to indicate normal operation
+      digitalWrite(greenLEDPin, HIGH);
 
-    // Stop further operations
-    while (1) {
-      // Optionally, add code here to blink an LED or provide other feedback
-      delay(100); // Prevents busy looping
+      isShutdown = false;
     }
   }
 }
@@ -222,4 +254,31 @@ void blinkLED(int delayTime) {
   delay(delayTime);
   digitalWrite(greenLEDPin, LOW);
   delay(delayTime);
+}
+
+String getTimestamp() {
+  DateTime now = rtc.now();
+  char buf[20];
+  sprintf(buf, "%04d/%02d/%02d %02d:%02d:%02d", 
+          now.year(), now.month(), now.day(), 
+          now.hour(), now.minute(), now.second());
+  return String(buf);
+}
+
+void displayDataOnLCD(const String &data) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(data.substring(0, 20));
+  if (data.length() > 20) {
+    lcd.setCursor(0, 1);
+    lcd.print(data.substring(20, 40));
+  }
+  if (data.length() > 40) {
+    lcd.setCursor(0, 2);
+    lcd.print(data.substring(40, 60));
+  }
+  if (data.length() > 60) {
+    lcd.setCursor(0, 3);
+    lcd.print(data.substring(60, 80));
+  }
 }
