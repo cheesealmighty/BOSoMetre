@@ -5,13 +5,13 @@
 #include <LiquidCrystal_I2C.h>
 
 // Define pins connected to the TCS3200 sensor
-#define S0 2
-#define S1 3
-#define S2 4
-#define S3 5
-#define sensorOut 6
-#define shutdownPin 7  // Define the shutdown pin
-#define greenLEDPin 8  // Define the green LED pin
+#define S0 5
+#define S1 6
+#define S2 7
+#define S3 8
+#define sensorOut 9
+#define shutdownPin 10  // Define the shutdown pin
+#define greenLEDPin 11  // Define the green LED pin
 
 // Calibration values for clear CSF readings (TO-DO: Calibrate these)
 int baselineClearPeriodCount = 1; // Initialize to 1 to prevent division by zero
@@ -26,7 +26,7 @@ const int targetCount = 360;
 const int pulseTimeout = 2000; 
 
 // Specifies the chip select pin for the SD card module
-const int chipSelect = 10;  
+const int chipSelect = 12;  
 
 // Variables for interacting with the SD card
 File sensorDataFile;
@@ -40,6 +40,9 @@ RTC_DS3231 rtc;
 
 // Variable to track shutdown state
 bool isShutdown = false;
+
+// Variable to store patient ID
+String patientID = "";
 
 // Function Prototypes
 void setupSensorPins();
@@ -105,6 +108,20 @@ void setup() {
     Serial.println("RTC lost power, setting the time!");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
+
+  // Prompt for patient ID
+  Serial.println("Please enter patient ID and press ENTER:");
+  while (Serial.available() == 0) {
+    // Wait for input
+  }
+  patientID = Serial.readStringUntil('\n');
+  patientID.trim();
+  Serial.print("Patient ID set to: ");
+  Serial.println(patientID);
+  lcd.clear();
+  lcd.print("Patient ID: ");
+  lcd.setCursor(0, 1);
+  lcd.print(patientID);
 }
 
 void loop() {
@@ -143,8 +160,8 @@ void loop() {
     // Get the current timestamp
     String timestamp = getTimestamp();
 
-    // Build the data string with timestamp
-    dataString  = timestamp + "," + String(redPeriodCount) + "," + String(greenPeriodCount) + "," + 
+    // Build the data string with timestamp and patient ID
+    dataString  = patientID + "," + timestamp + "," + String(redPeriodCount) + "," + String(greenPeriodCount) + "," + 
                   String(bluePeriodCount) + "," + String(clearPeriodCount) + "," + 
                   String(turbidityPercent) + "," + 
                   String(redChangePercent) + "," + String(greenChangePercent) + "," +
@@ -208,12 +225,12 @@ void readColor(int &colorCount, int S2State, int S3State) {
   }
 
   // Debug statement to print color count
-  Serial.print("Color count (S2: ");
-  Serial.print(S2State);
-  Serial.print(", S3: ");
-  Serial.println(S3State);
-  Serial.print("): ");
-  Serial.println(colorCount);
+  //Serial.print("Color count (S2: ");
+  //Serial.print(S2State);
+  //Serial.print(", S3: ");
+  //Serial.println(S3State);
+  //Serial.print("): ");
+  //Serial.println(colorCount);
 }
 
 void checkShutdown() {
